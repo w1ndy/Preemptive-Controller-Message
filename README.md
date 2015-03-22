@@ -38,7 +38,8 @@ Experiments on the preemptive behavior of SDN controller message in openvswitch.
 
   4. Compile Open vSwitch modules
     ```shell
-    bash genmodules.sh```
+    bash genmodules.sh
+    ```
 
   5. Reboot
 
