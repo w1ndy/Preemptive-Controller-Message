@@ -16,7 +16,8 @@ Experiments on the preemptive behavior of SDN controller message in openvswitch.
   1. Clone kernel submodule
     ```shell
     git submodule init
-    git submodule update --depth=1```
+    git submodule update --depth=1
+    ```
 
   2. Compile kernel
     ```shell
@@ -24,14 +25,16 @@ Experiments on the preemptive behavior of SDN controller message in openvswitch.
     make mrproper
     zcat /proc/config.gz > .config      # use system default kernel config
     make olddefconfig
-    make -j4                            # compile using 4 threads```
+    make -j4                            # compile using 4 threads
+    ```
 
   3. Install kernel
     ```shell
     cd linux
     sudo make modules_install
     sudo cp arch/x86_64/boot/bzImage /boot/vmlinuz-linux
-    sudo mkinitcpio -p linux            # regenerate initramfs```
+    sudo mkinitcpio -p linux            # regenerate initramfs
+    ```
 
   4. Compile Open vSwitch modules
     ```shell
@@ -42,7 +45,9 @@ Experiments on the preemptive behavior of SDN controller message in openvswitch.
 ## Usage
 An automated test shell script is provided by ``runtest.sh``:
 ```shell
-sudo bash runtest.sh```
+sudo bash runtest.sh
+```
+
 The script performs tests across different flow miss rates with or without preemptive behaviors, generating:
 * ``preemptive_full.dat``: contains full test results of preemptive behaviors;
 * ``nonpreemptive_full.dat``: contains full test results of non-preemptive behaviors;
@@ -62,7 +67,8 @@ Userspace Openflow virtual switch implementation with preemptive behavior can be
 cd openflow
 ./configure --prefix=/usr --localstatedir=/var CC=clang
 make
-sudo make install```
+sudo make install
+```
 The code adds an argument ``--prioritize`` to original datapath simulator ``ofdatapath``. To use it with Mininet, specify using ``UserSwitch`` when creating topology and pass the parameter ``--prioritize`` when constructing switches:
 ```python
 from mininet.node import UserSwitch
