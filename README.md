@@ -11,6 +11,9 @@ Experiments on the preemptive behavior of SDN controller message in openvswitch.
   * Open vSwitch >= 2.3.1 ([Download](http://openvswitch.org/download/), compile and install without kernel modules)
   * Mininet >= 2.2.0
   * Ryu >= 3.19
+  * Scapy
+  * Numpy
+  * Matplotlib
 
 3. Compile modified linux kernel (unless specified otherwise, all commands are executed in root directory of the project)
   1. Clone kernel submodule
