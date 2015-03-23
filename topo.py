@@ -24,7 +24,7 @@ def setup():
     return net, h1, h2
 
 def test():
-    for r in [float(i) / 100.0 for i in range(5, 100, 5)]:
+    for r in [float(i) / 100.0 for i in range(0, 100, 5)]:
         info('Setting up Mininet...\n')
         net, h1, h2 = setup()
 
@@ -36,12 +36,12 @@ def test():
         time.sleep(5)
 
         info('Testing on rate %.2f...\n' % r)
-        h2.cmd("python2 server.py > /dev/null &")
-        h1.cmd("sleep 1 && python2 client.py %.2f 10000" % r)
-        h2.cmd("wait")
+        h2.cmd("python2 server.py &")
+        h1.cmdPrint("sleep 1 && python2 client.py %.2f 50000" % r)
+        h2.cmd("sleep 5 && cat server.pid | xargs kill -s sigint")
         net.stop()
 
-        time.sleep(15) # time out all rules
+        time.sleep(1)
 
 if __name__ == '__main__':
     setLogLevel( 'info' )

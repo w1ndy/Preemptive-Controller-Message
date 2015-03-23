@@ -13,11 +13,13 @@ class Controller(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(Controller, self).__init__(*args, **kwargs)
-        self.mac_to_port    = {}
-        self.server_mac     = '7a:4e:18:bf:a3:24'
-        self.server_ip      = '10.0.0.2'
-        self.server_dp_port = 2
-        self.rule_timeout   = 15
+        self.mac_to_port        = {}
+
+        self.server_hwaddr      = '7a:4e:18:bf:a3:24'
+        self.client_hwaddr      = '1a:b6:49:59:92:aa'
+        self.controller_hwaddr  = '32:a4:04:30:c0:fd'
+        self.custom_type        = 0x0801
+        self.server_dp_port     = 2
 
     def add_flow(self, datapath, priority, match, actions, buffer_id = None):
         ofproto = datapath.ofproto
@@ -43,13 +45,26 @@ class Controller(app_manager.RyuApp):
         datapath.send_msg(mod)
         self.logger.info("%s: flow rules installed.", datapath.id)
 
-    def install_arp_tracker(self, datapath):
-        "Capture arp request packet"
-
+    def install_forwarder(self, datapath):
         ofproto = datapath.ofproto
         parser  = datapath.ofproto_parser
 
-        match   = parser.OFPMatch(arp_op = arp.ARP_REQUEST)
+        # Forward packets to server
+        match   = parser.OFPMatch(eth_dst = self.server_hwaddr)
+        actions = [parser.OFPActionOutput(self.server_dp_port)]
+
+        inst = [parser.OFPInstructionActions(
+            ofproto.OFPIT_APPLY_ACTIONS, actions)]
+        mod = parser.OFPFlowMod(
+            datapath        = datapath,
+            priority        = 1,
+            match           = match,
+            instructions    = inst)
+
+        datapath.send_msg(mod)
+
+        #Capture packets sent to controller
+        match   = parser.OFPMatch(eth_dst = self.controller_hwaddr)
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
 
         inst = [parser.OFPInstructionActions(
@@ -61,74 +76,30 @@ class Controller(app_manager.RyuApp):
             instructions    = inst)
 
         datapath.send_msg(mod)
-        self.logger.info("arp tracker installed for %s", datapath.id)
 
-    def fix_ip(self, datapath, fake_ip):
-        "Redirect packets with fake ip to server"
+        self.logger.info("forwarder installed for %s", datapath.id)
 
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-
-        match = parser.OFPMatch(
-            eth_type    = 0x0800,
-            ipv4_dst    = fake_ip)
-        actions = [
-            parser.OFPActionSetField(ipv4_dst = self.server_ip),
-            parser.OFPActionOutput(self.server_dp_port)]
-
-        inst = [parser.OFPInstructionActions(
-            ofproto.OFPIT_APPLY_ACTIONS, actions)]
-        mod = parser.OFPFlowMod(
-            datapath        = datapath,
-            priority        = 100,
-            match           = match,
-            instructions    = inst,
-            hard_timeout    = self.rule_timeout)
-
-        datapath.send_msg(mod)
-
-    def send_packet(self, datapath, port, pkt):
-        "Deliver packet using PACKET OUT message"
+    def redirect(self, datapath, buffer_id):
+        #print "Redirecting packets to server..."
 
         ofproto = datapath.ofproto
         parser  = datapath.ofproto_parser
 
-        pkt.serialize()
-        data    = pkt.data
+        if buffer_id == ofproto.OFP_NO_BUFFER:
+            print "error: buffer id absent"
+            return
 
-        actions = [parser.OFPActionOutput(port=port)]
+        ofproto = datapath.ofproto
+        parser  = datapath.ofproto_parser
+
+        actions = [parser.OFPActionOutput(self.server_dp_port)]
         out     = parser.OFPPacketOut(
             datapath    = datapath,
-            buffer_id   = ofproto.OFP_NO_BUFFER,
+            buffer_id   = buffer_id,
             in_port     = ofproto.OFPP_CONTROLLER,
-            actions     = actions,
-            data        = data)
+            actions     = actions)
 
         datapath.send_msg(out)
-
-    def arp_spoof(self, pkt_eth, pkt_arp, datapath, port):
-        "Spoof a fake arp response"
-
-        if pkt_arp.opcode != arp.ARP_REQUEST:
-            return ;
-        pkt = packet.Packet()
-
-        pkt.add_protocol(ethernet.ethernet(
-            ethertype   = pkt_eth.ethertype,
-            dst         = pkt_eth.src,
-            src         = self.server_mac))
-        pkt.add_protocol(arp.arp(
-            opcode      = arp.ARP_REPLY,
-            src_mac     = self.server_mac,
-            src_ip      = pkt_arp.dst_ip,
-            dst_mac     = pkt_arp.src_mac,
-            dst_ip      = pkt_arp.src_ip))
-
-        self.fix_ip(datapath, pkt_arp.dst_ip)
-        self.send_packet(datapath, port, pkt)
-
-        #self.logger.info("arp spoofed %s to %s",
-        #    pkt_arp.dst_ip, self.server_ip)
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -136,7 +107,7 @@ class Controller(app_manager.RyuApp):
         ofproto     = datapath.ofproto
         parser      = datapath.ofproto_parser
 
-        self.install_arp_tracker(datapath)
+        self.install_forwarder(datapath)
 
         # flow-miss rule
         match   = parser.OFPMatch()
@@ -153,18 +124,14 @@ class Controller(app_manager.RyuApp):
 
         pkt = packet.Packet(msg.data)
         pkt_eth = pkt.get_protocol(ethernet.ethernet)
-        pkt_arp = pkt.get_protocol(arp.arp)
 
         dst = pkt_eth.dst
         src = pkt_eth.src
         dpid = datapath.id
 
-        if pkt_arp and pkt_arp.opcode == arp.ARP_REQUEST:
-            if str(pkt_arp.dst_ip).split('.')[1].startswith('1'):
-                self.arp_spoof(pkt_eth, pkt_arp, datapath, in_port)
-                return
-            self.logger.info("%s: uncaptured arp request for ip %s",
-                dpid, pkt_arp.dst_ip)
+        if pkt_eth.dst == self.controller_hwaddr and pkt_eth.ethertype == self.custom_type:
+            self.redirect(datapath, msg.buffer_id)
+            return
 
         self.logger.info("%s: packet in from %s to %s at port %s",
             dpid, src, dst, in_port)
@@ -180,7 +147,9 @@ class Controller(app_manager.RyuApp):
         actions = [parser.OFPActionOutput(out_port)]
 
         if out_port != ofproto.OFPP_FLOOD:
-            match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+            match = parser.OFPMatch(
+                in_port     = in_port,
+                eth_dst     = dst)
             if msg.buffer_id != ofproto.OFP_NO_BUFFER:
                 self.add_flow(datapath, 1, match, actions, msg.buffer_id)
                 return
